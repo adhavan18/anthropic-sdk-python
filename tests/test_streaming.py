@@ -5,7 +5,7 @@ from typing import TypeVar, Iterator, AsyncIterator
 import httpx2
 import pytest
 
-from anthropic import Anthropic, AsyncAnthropic, APITimeoutError
+from anthropic import Anthropic, AsyncAnthropic, APITimeoutError, APIConnectionError
 from anthropic._streaming import Stream, AsyncStream, ServerSentEvent
 from anthropic._exceptions import APIStatusError
 
@@ -62,6 +62,32 @@ async def test_async_stream_wraps_mid_stream_transport_error() -> None:
         ) as s:
             async for _ in s:
                 pass
+
+
+def test_sync_stream_does_not_mislabel_a_parse_error_as_a_connection_error() -> None:
+    """A bug in parsing an in-stream event (malformed JSON here) is a defect in our own
+    code, not a transport failure — it must not come out the other end looking retryable."""
+
+    def body() -> Iterator[bytes]:
+        yield b"event: message_start\n"
+        yield b"data: {not valid json\n"
+        yield b"\n"
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body())
+
+    client = Anthropic(
+        api_key="My API Key",
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
+        max_retries=0,
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        with client.messages.stream(model="claude-sonnet-4-6", max_tokens=8, messages=[{"role": "user", "content": "hi"}]) as s:
+            for _ in s:
+                pass
+
+    assert not isinstance(exc_info.value, APIConnectionError)
 
 
 @pytest.mark.asyncio

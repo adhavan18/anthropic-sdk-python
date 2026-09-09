@@ -10,7 +10,7 @@ from typing_extensions import Self, Protocol, TypeGuard, override, get_origin, r
 import httpx2
 
 from ._utils import is_dict, extract_type_var_from_base
-from ._exceptions import AnthropicError, APITimeoutError, APIConnectionError
+from ._exceptions import APITimeoutError, APIConnectionError
 
 if TYPE_CHECKING:
     from ._client import Anthropic, AsyncAnthropic
@@ -145,9 +145,7 @@ class Stream(Generic[_T]):
                     )
         except httpx2.TimeoutException as err:
             raise APITimeoutError(request=response.request) from err
-        except Exception as err:
-            if isinstance(err, AnthropicError):
-                raise
+        except httpx2.TransportError as err:
             raise APIConnectionError(request=response.request) from err
         finally:
             # Ensure the response is closed even if the consumer doesn't read all data
@@ -299,9 +297,7 @@ class AsyncStream(Generic[_T]):
                     )
         except httpx2.TimeoutException as err:
             raise APITimeoutError(request=response.request) from err
-        except Exception as err:
-            if isinstance(err, AnthropicError):
-                raise
+        except httpx2.TransportError as err:
             raise APIConnectionError(request=response.request) from err
         finally:
             # Ensure the response is closed even if the consumer doesn't read all data
